@@ -1,0 +1,52 @@
+name: Kharcha
+options:
+  bundleIdPrefix: com.kharcha
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "26.0"
+
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    from: "7.0.0"
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: "8.0.0"
+
+
+targets:
+  Kharcha:
+    type: application
+    platform: iOS
+    sources:
+      - Kharcha
+    settings:
+      base:
+        INFOPLIST_FILE: Kharcha/Resources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.kharcha.app
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.2"
+        DEVELOPMENT_TEAM: ""
+    dependencies:
+      - package: GRDB
+      - package: GoogleSignIn
+    info:
+      path: Kharcha/Resources/Info.plist
+      properties:
+        CFBundleName: Kharcha
+        CFBundleDisplayName: Kharcha
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        GIDClientID: "70391722206-m5u5anf4m015n0jcc3p6rqlertj9tonn.apps.googleusercontent.com"
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - "com.googleusercontent.apps.70391722206-m5u5anf4m015n0jcc3p6rqlertj9tonn"
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationPortraitUpsideDown
+        UILaunchScreen: {}
+        NSCameraUsageDescription: "Kharcha needs camera access to capture bill photos"
+        NSPhotoLibraryUsageDescription: "Kharcha needs photo library access to select bill photos"

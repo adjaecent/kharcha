@@ -1,0 +1,15 @@
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+DerivedData/
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+build/
+
+# Generated
+Kharcha.xcodeproj/
+
+# macOS
+.DS_Store
+
+# Secrets (should never be committed)
+*.env
