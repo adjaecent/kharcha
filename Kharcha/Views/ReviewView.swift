@@ -15,12 +15,35 @@ struct ReviewView: View {
     @State private var gstAmount = ""
     @State private var gstin = ""
     @State private var billNo = ""
-    @State private var ocrInProgress = true
+    @State private var category = "Miscellaneous"
+    @State private var processingPhase: ProcessingPhase = .ocr
+
+    enum ProcessingPhase {
+        case ocr
+        case extracting
+        case done
+    }
 
     private let currencies = Currency.allCases
 
+    static let categories = [
+        "Purchases (Goods)",
+        "Direct Expenses",
+        "Rent & Utilities",
+        "Software & SaaS",
+        "Professional Fees",
+        "Marketing & Ads",
+        "Travel",
+        "Meals",
+        "Bank Charges",
+        "Capital Assets",
+        "Taxes",
+
+        "Miscellaneous",
+    ]
+
     private var isLocked: Bool {
-        ocrInProgress || bill?.status == .uploaded
+        processingPhase != .done || bill?.status == .uploaded
     }
 
     var body: some View {
@@ -36,12 +59,20 @@ struct ReviewView: View {
                     }
                 }
 
-                if ocrInProgress {
+                if processingPhase != .done {
                     Section {
                         HStack {
                             ProgressView()
-                            Text("Reading bill...")
-                                .foregroundStyle(.secondary)
+                            switch processingPhase {
+                            case .ocr:
+                                Text("Reading bill...")
+                                    .foregroundStyle(.secondary)
+                            case .extracting:
+                                Text("Extracting details...")
+                                    .foregroundStyle(.secondary)
+                            case .done:
+                                EmptyView()
+                            }
                         }
                     }
                 }
@@ -71,6 +102,15 @@ struct ReviewView: View {
                         .disabled(isLocked)
                 }
 
+                Section("Category") {
+                    Picker("Category", selection: $category) {
+                        ForEach(Self.categories, id: \.self) { cat in
+                            Text(cat).tag(cat)
+                        }
+                    }
+                    .disabled(isLocked)
+                }
+
                 Section("Tax") {
                     TextField("GST Amount", text: $gstAmount)
                         .keyboardType(.decimalPad)
@@ -96,7 +136,7 @@ struct ReviewView: View {
                     Button(bill.status == .draft ? "Save" : "Update") {
                         saveBill()
                     }
-                    .disabled(ocrInProgress)
+                    .disabled(isLocked)
                 }
             }
         }
@@ -111,22 +151,39 @@ struct ReviewView: View {
         bill = fetched
         populateFields(from: fetched)
 
-        // If OCR already done, no need to wait
-        if fetched.rawText != nil {
-            ocrInProgress = false
+        // Already fully processed
+        if fetched.extractionDone {
+            processingPhase = .done
             return
         }
 
-        // Poll until OCR completes
-        for _ in 0..<30 {
+        // Already has OCR text but extraction not done
+        if fetched.rawText != nil {
+            processingPhase = .extracting
+        }
+
+        // Poll until fully done
+        for _ in 0..<60 {
             try? await Task.sleep(for: .milliseconds(500))
-            if let fresh = try? db.fetch(id: billId), fresh.rawText != nil {
-                bill = fresh
-                ocrInProgress = false
-                return
+            if let fresh = try? db.fetch(id: billId) {
+                if fresh.extractionDone {
+                    bill = fresh
+                    populateFields(from: fresh)
+                    processingPhase = .done
+                    return
+                }
+                if fresh.rawText != nil && processingPhase == .ocr {
+                    processingPhase = .extracting
+                }
             }
         }
-        ocrInProgress = false
+
+        // Timed out — unlock the form anyway
+        if let fresh = try? db.fetch(id: billId) {
+            bill = fresh
+            populateFields(from: fresh)
+        }
+        processingPhase = .done
     }
 
     private static let dateFormatter: DateFormatter = {
@@ -143,12 +200,12 @@ struct ReviewView: View {
         gstAmount = bill.gstAmount.map { String(format: "%.2f", $0) } ?? ""
         gstin = bill.gstin ?? ""
         billNo = bill.billNo ?? ""
+        category = bill.category ?? "Miscellaneous"
     }
 
     private func saveBill() {
         guard let bill else { return }
 
-        // Re-check DB — might have been uploaded in the background
         if let fresh = try? db.fetch(id: bill.id), fresh.status == .uploaded {
             self.bill = fresh
             return
@@ -162,6 +219,7 @@ struct ReviewView: View {
         updated.gstAmount = Double(gstAmount)
         updated.gstin = gstin.isEmpty ? nil : gstin
         updated.billNo = billNo.isEmpty ? nil : billNo
+        updated.category = category
         updated.status = .saved
 
         do {

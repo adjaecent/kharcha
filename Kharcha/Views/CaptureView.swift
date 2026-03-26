@@ -37,6 +37,8 @@ struct CaptureView: View {
                         Button("Choose from Library", systemImage: "photo.on.rectangle") { showPhotoPicker = true }
                     } label: {
                         Image(systemName: "plus")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                 }
             }
@@ -88,12 +90,32 @@ struct CaptureView: View {
             capturedBillId = bill.id
 
             Task {
+                var updated = bill
+
+                // Phase 1: OCR
                 let ocr = OCRService()
                 if let rawText = try? await ocr.recognizeText(from: image) {
-                    var updated = bill
                     updated.rawText = rawText
                     try? db.update(updated)
                 }
+
+                // Phase 2: Field extraction (if Apple Intelligence available)
+                if ExtractionService.isAvailable, let rawText = updated.rawText {
+                    let extractor = ExtractionService()
+                    if let fields = await extractor.extract(from: rawText) {
+                        updated.vendor = fields.vendor
+                        updated.date = fields.date
+                        updated.amount = fields.amount
+                        updated.currency = fields.currency ?? "INR"
+                        updated.gstAmount = fields.gstAmount
+                        updated.gstin = fields.gstin
+                        updated.billNo = fields.billNo
+                        updated.category = fields.category
+                    }
+                }
+
+                updated.extractionDone = true
+                try? db.update(updated)
             }
 
             navigateToReview = true

@@ -108,7 +108,10 @@ final class SyncService: ObservableObject {
         }
 
         // Step 2: Upload file to the resumable URI
-        var uploadRequest = URLRequest(url: URL(string: uploadURL)!)
+        guard let uploadURLParsed = URL(string: uploadURL) else {
+            throw SyncError.driveUploadFailed(statusCode: 0, body: "Invalid upload URI")
+        }
+        var uploadRequest = URLRequest(url: uploadURLParsed)
         uploadRequest.httpMethod = "PUT"
         uploadRequest.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
 
@@ -125,6 +128,7 @@ final class SyncService: ObservableObject {
     // MARK: - Google Sheets append
 
     private func appendToSheet(bill: Bill, sheetId: String, token: String) async throws {
+        // Use RAW so Sheets doesn't auto-interpret dates as serial numbers
         let row: [Any] = [
             ISO8601DateFormatter().string(from: bill.createdAt),
             bill.driveURL ?? "",
@@ -135,6 +139,7 @@ final class SyncService: ObservableObject {
             bill.gstAmount ?? 0,
             bill.gstin ?? "",
             bill.billNo ?? "",
+            bill.category ?? "Miscellaneous",
             String((bill.rawText ?? "").prefix(5000))
         ]
 
@@ -143,7 +148,7 @@ final class SyncService: ObservableObject {
 
         var components = URLComponents(string: "https://sheets.googleapis.com/v4/spreadsheets/\(sheetId)/values/A1:append")!
         components.queryItems = [
-            URLQueryItem(name: "valueInputOption", value: "USER_ENTERED"),
+            URLQueryItem(name: "valueInputOption", value: "RAW"),
             URLQueryItem(name: "insertDataOption", value: "INSERT_ROWS"),
         ]
         var request = URLRequest(url: components.url!)

@@ -18,50 +18,47 @@ struct SettingsView: View {
                         Text(auth.currentUser?.profile?.email ?? "Signed in")
                             .foregroundStyle(.secondary)
                     }
+
+                    Button {
+                        showFolderEditor = true
+                    } label: {
+                        HStack {
+                            Text("Drive Folder")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if folderId.isEmpty {
+                                Text("Not Set")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Image(systemName: folderValid ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundStyle(folderValid ? .green : .red)
+                            }
+                        }
+                    }
+
+                    Button {
+                        showSheetEditor = true
+                    } label: {
+                        HStack {
+                            Text("Spreadsheet")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if sheetId.isEmpty {
+                                Text("Not Set")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Image(systemName: sheetValid ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundStyle(sheetValid ? .green : .red)
+                            }
+                        }
+                    }
+
                     Button("Sign Out", role: .destructive) {
                         auth.signOut()
                     }
                 } else {
                     Button("Sign in with Google") {
                         signIn()
-                    }
-                }
-            }
-
-            Section("Google Sheet") {
-                Button {
-                    showSheetEditor = true
-                } label: {
-                    HStack {
-                        Text("Spreadsheet ID")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        if sheetId.isEmpty {
-                            Text("Not Set")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Image(systemName: sheetValid ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(sheetValid ? .green : .red)
-                        }
-                    }
-                }
-            }
-
-            Section("Google Drive") {
-                Button {
-                    showFolderEditor = true
-                } label: {
-                    HStack {
-                        Text("Drive Folder ID")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        if folderId.isEmpty {
-                            Text("Not Set")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Image(systemName: folderValid ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(folderValid ? .green : .red)
-                        }
                     }
                 }
             }

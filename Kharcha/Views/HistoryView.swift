@@ -44,8 +44,8 @@ struct HistoryView: View {
     private func deleteBills(at offsets: IndexSet) {
         for index in offsets {
             let bill = bills[index]
-            try? FileManager.default.removeItem(atPath: bill.imagePath)
             try? db.delete(id: bill.id)
+            try? FileManager.default.removeItem(atPath: bill.imagePath)
         }
         bills.remove(atOffsets: offsets)
     }
@@ -79,13 +79,13 @@ struct BillRow: View {
                     Image(uiImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 56)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 } else {
                     Image(systemName: "doc.text.fill")
                         .font(.title2)
                         .foregroundStyle(.secondary)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 56)
                 }
             }
 
@@ -110,6 +110,13 @@ struct BillRow: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+
+                if let category = bill.category {
+                    Text(category)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
             }
 
             Spacer()
