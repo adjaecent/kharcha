@@ -134,8 +134,9 @@ struct IDEditorSheet: View {
                             validationState = .idle
                         }
                 } footer: {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 12) {
                         Text(hint)
+
                         switch validationState {
                         case .idle:
                             EmptyView()
@@ -212,16 +213,20 @@ struct IDEditorSheet: View {
                 dismiss()
             } else if http.statusCode == 404 {
                 validationState = .invalid("Not found")
+                value = cleanId
                 isValid = false
             } else if http.statusCode == 403 {
                 validationState = .invalid("No access — check sharing")
+                value = cleanId
                 isValid = false
             } else {
                 validationState = .invalid("Error (\(http.statusCode))")
+                value = cleanId
                 isValid = false
             }
         } catch {
             validationState = .invalid("Connection failed")
+            value = cleanId
             isValid = false
         }
     }

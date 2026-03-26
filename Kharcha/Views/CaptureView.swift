@@ -5,6 +5,7 @@ struct CaptureView: View {
     @EnvironmentObject var sync: SyncService
     @State private var showCamera = false
     @State private var showPhotoPicker = false
+    @State private var showFilePicker = false
     @State private var capturedBillId: String?
     @State private var navigateToReview = false
 
@@ -34,7 +35,8 @@ struct CaptureView: View {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button("Take Photo", systemImage: "camera") { showCamera = true }
-                        Button("Choose from Library", systemImage: "photo.on.rectangle") { showPhotoPicker = true }
+                        Button("Choose Photo", systemImage: "photo.on.rectangle") { showPhotoPicker = true }
+                        Button("Choose File", systemImage: "doc") { showFilePicker = true }
                     } label: {
                         Image(systemName: "plus")
                             .frame(width: 44, height: 44)
@@ -48,6 +50,9 @@ struct CaptureView: View {
             }
             .sheet(isPresented: $showPhotoPicker) {
                 PhotoLibraryPicker(onCapture: handleCapture)
+            }
+            .sheet(isPresented: $showFilePicker) {
+                DocumentPicker(onCapture: handleCapture)
             }
             .navigationDestination(isPresented: $navigateToReview) {
                 if let billId = capturedBillId {
