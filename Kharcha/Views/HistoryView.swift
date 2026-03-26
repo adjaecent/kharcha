@@ -65,6 +65,13 @@ struct HistoryView: View {
 
 struct BillRow: View {
     let bill: Bill
+    @EnvironmentObject var auth: GoogleAuthService
+    @AppStorage("sheet_id") private var sheetId = ""
+    @AppStorage("folder_id") private var folderId = ""
+
+    private var syncable: Bool {
+        auth.isSignedIn && !sheetId.isEmpty && !folderId.isEmpty
+    }
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -121,13 +128,14 @@ struct BillRow: View {
 
             Spacer()
 
-            StatusIndicator(status: bill.status)
+            StatusIndicator(status: bill.status, syncable: syncable)
         }
     }
 }
 
 struct StatusIndicator: View {
     let status: BillStatus
+    let syncable: Bool
 
     var body: some View {
         switch status {
@@ -135,8 +143,13 @@ struct StatusIndicator: View {
             Image(systemName: "pencil.circle.fill")
                 .foregroundStyle(.orange)
         case .saved:
-            Image(systemName: "arrow.up.circle.fill")
-                .foregroundStyle(.blue)
+            if syncable {
+                Image(systemName: "arrow.up.circle.fill")
+                    .foregroundStyle(.blue)
+            } else {
+                Image(systemName: "icloud.slash")
+                    .foregroundStyle(.secondary)
+            }
         case .uploaded:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)

@@ -35,20 +35,12 @@ struct KharchaApp: App {
 
 struct ContentView: View {
     @EnvironmentObject var auth: GoogleAuthService
-    @AppStorage("sheet_id") private var sheetId = ""
-    @AppStorage("folder_id") private var folderId = ""
-
-    private var isConfigured: Bool {
-        auth.isSignedIn && !sheetId.isEmpty && !folderId.isEmpty
-    }
 
     var body: some View {
-        if isConfigured {
-            MainTabView()
+        if auth.isRestoring {
+            Color.clear
         } else {
-            NavigationStack {
-                SettingsView()
-            }
+            MainTabView()
         }
     }
 }

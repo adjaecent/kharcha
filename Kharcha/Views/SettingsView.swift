@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var auth: GoogleAuthService
+    @EnvironmentObject var sync: SyncService
     @AppStorage("sheet_id") private var sheetId = ""
     @AppStorage("folder_id") private var folderId = ""
     @AppStorage("sheet_valid") private var sheetValid = false
@@ -82,6 +83,13 @@ struct SettingsView: View {
                 isValid: $folderValid
             )
         }
+        .onChange(of: sheetId) { _, _ in trySyncIfReady() }
+        .onChange(of: folderId) { _, _ in trySyncIfReady() }
+    }
+
+    private func trySyncIfReady() {
+        guard auth.isSignedIn, !sheetId.isEmpty, !folderId.isEmpty else { return }
+        Task { await sync.syncPending() }
     }
 
     private func signIn() {
@@ -90,6 +98,7 @@ struct SettingsView: View {
 
         Task {
             try? await auth.signIn(presenting: rootVC)
+            trySyncIfReady()
         }
     }
 }

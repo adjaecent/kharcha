@@ -5,6 +5,7 @@ import GoogleSignIn
 final class GoogleAuthService: ObservableObject {
     @Published var currentUser: GIDGoogleUser?
     @Published var isSignedIn = false
+    @Published var isRestoring = true
 
     private let driveScope = "https://www.googleapis.com/auth/drive.file"
     private let sheetsScope = "https://www.googleapis.com/auth/spreadsheets"
@@ -14,6 +15,7 @@ final class GoogleAuthService: ObservableObject {
     }
 
     func restorePreviousSignIn() async {
+        defer { isRestoring = false }
         do {
             let user = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
             currentUser = user
