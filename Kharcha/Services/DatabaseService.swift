@@ -62,6 +62,20 @@ final class DatabaseService: ObservableObject {
             }
         }
 
+        migrator.registerMigration("v4") { db in
+            try db.alter(table: "bills") { t in
+                t.add(column: "sheetAppended", .boolean).notNull().defaults(to: false)
+            }
+            // Uploaded bills have already been appended to the sheet
+            try db.execute(sql: "UPDATE bills SET sheetAppended = 1 WHERE status = 'uploaded'")
+            // Convert absolute image paths to Documents-relative so they
+            // survive container path changes
+            try db.execute(sql: """
+                UPDATE bills SET imagePath = substr(imagePath, instr(imagePath, '/Documents/') + 11)
+                WHERE instr(imagePath, '/Documents/') > 0
+                """)
+        }
+
         try migrator.migrate(dbQueue)
     }
 
@@ -78,12 +92,6 @@ final class DatabaseService: ObservableObject {
         updated.updatedAt = Date()
         try dbQueue.write { db in
             try updated.update(db)
-        }
-    }
-
-    func fetchAll() throws -> [Bill] {
-        try dbQueue.read { db in
-            try Bill.order(Bill.Columns.createdAt.desc).fetchAll(db)
         }
     }
 
@@ -107,18 +115,40 @@ final class DatabaseService: ObservableObject {
         }
     }
 
-    func search(query: String) throws -> [Bill] {
-        let pattern = "%\(query)%"
-        return try dbQueue.read { db in
-            try Bill
-                .filter(
-                    Bill.Columns.vendor.like(pattern) ||
-                    Bill.Columns.rawText.like(pattern) ||
-                    Bill.Columns.billNo.like(pattern) ||
-                    Bill.Columns.gstin.like(pattern)
-                )
-                .order(Bill.Columns.createdAt.desc)
-                .fetchAll(db)
+    /// Bills whose OCR/extraction pipeline never finished (e.g. the app was
+    /// killed mid-processing).
+    func fetchUnprocessed() throws -> [Bill] {
+        try dbQueue.read { db in
+            try Bill.filter(Bill.Columns.extractionDone == false).fetchAll(db)
         }
+    }
+
+    /// Async sequence that emits the matching bills whenever the table
+    /// changes — keeps the list live as OCR/extraction/sync update rows.
+    func observeBills(matching query: String = "") -> AsyncValueObservation<[Bill]> {
+        ValueObservation
+            .tracking { db in try Self.billsRequest(matching: query).fetchAll(db) }
+            .values(in: dbQueue)
+    }
+
+    /// Async sequence that emits one bill's row whenever it changes.
+    func observeBill(id: String) -> AsyncValueObservation<Bill?> {
+        ValueObservation
+            .tracking { db in try Bill.fetchOne(db, key: id) }
+            .values(in: dbQueue)
+    }
+
+    private nonisolated static func billsRequest(matching query: String) -> QueryInterfaceRequest<Bill> {
+        var request = Bill.order(Bill.Columns.createdAt.desc)
+        if !query.isEmpty {
+            let pattern = "%\(query)%"
+            request = request.filter(
+                Bill.Columns.vendor.like(pattern) ||
+                Bill.Columns.rawText.like(pattern) ||
+                Bill.Columns.billNo.like(pattern) ||
+                Bill.Columns.gstin.like(pattern)
+            )
+        }
+        return request
     }
 }

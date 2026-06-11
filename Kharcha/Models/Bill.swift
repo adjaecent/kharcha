@@ -22,6 +22,7 @@ struct Bill: Identifiable, Codable, FetchableRecord, PersistableRecord, Sendable
     var extractionDone: Bool
     var status: BillStatus
     var driveURL: String?
+    var sheetAppended: Bool
     var createdAt: Date
     var updatedAt: Date
 
@@ -29,7 +30,7 @@ struct Bill: Identifiable, Codable, FetchableRecord, PersistableRecord, Sendable
 
     enum Columns: String, ColumnExpression {
         case id, imagePath, vendor, date, amount, currency
-        case gstAmount, gstin, billNo, category, rawText, extractionDone, status, driveURL
+        case gstAmount, gstin, billNo, category, rawText, extractionDone, status, driveURL, sheetAppended
         case createdAt, updatedAt
     }
 
@@ -39,7 +40,18 @@ struct Bill: Identifiable, Codable, FetchableRecord, PersistableRecord, Sendable
         self.currency = Currency.inr.code
         self.extractionDone = false
         self.status = .draft
+        self.sheetAppended = false
         self.createdAt = Date()
         self.updatedAt = Date()
+    }
+
+    private static let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+
+    /// `imagePath` is stored relative to the Documents directory so it
+    /// survives container path changes (device restore, simulator reinstall).
+    /// Absolute paths are tolerated for pre-migration rows.
+    var absoluteImagePath: String {
+        if imagePath.hasPrefix("/") { return imagePath }
+        return Self.documentsURL.appendingPathComponent(imagePath).path
     }
 }
