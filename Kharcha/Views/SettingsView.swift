@@ -3,13 +3,12 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var auth: GoogleAuthService
     @EnvironmentObject var sync: SyncService
-    @AppStorage("sheet_id") private var sheetId = ""
-    @AppStorage("folder_id") private var folderId = ""
-    @AppStorage("sheet_valid") private var sheetValid = false
-    @AppStorage("folder_valid") private var folderValid = false
+    @AppStorage(SyncService.folderIdKey) private var appFolderId = ""
+    @AppStorage(SyncService.sheetIdKey) private var appSheetId = ""
 
-    @State private var showSheetEditor = false
-    @State private var showFolderEditor = false
+    private var hasDriveArtifacts: Bool {
+        !appFolderId.isEmpty || !appSheetId.isEmpty
+    }
 
     var body: some View {
         Form {
@@ -18,40 +17,6 @@ struct SettingsView: View {
                     LabeledContent("Account") {
                         Text(auth.currentUser?.profile?.email ?? "Signed in")
                             .foregroundStyle(.secondary)
-                    }
-
-                    Button {
-                        showFolderEditor = true
-                    } label: {
-                        HStack {
-                            Text("Drive Folder")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if folderId.isEmpty {
-                                Text("Not Set")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Image(systemName: folderValid ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundStyle(folderValid ? .green : .red)
-                            }
-                        }
-                    }
-
-                    Button {
-                        showSheetEditor = true
-                    } label: {
-                        HStack {
-                            Text("Spreadsheet")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if sheetId.isEmpty {
-                                Text("Not Set")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Image(systemName: sheetValid ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundStyle(sheetValid ? .green : .red)
-                            }
-                        }
                     }
 
                     Button("Sign Out", role: .destructive) {
@@ -63,33 +28,44 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            if auth.isSignedIn {
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Image(systemName: "externaldrive.fill.badge.icloud")
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                            .frame(width: 56, height: 56)
+                            .background(.gray.gradient, in: RoundedRectangle(cornerRadius: 12))
+
+                        Text("Your Data")
+                            .font(.title3.bold())
+
+                        Text(hasDriveArtifacts
+                            ? "Bill photos are saved to a folder in your Google Drive, and every bill is added to a spreadsheet inside it. You can move or rename them, the app keeps track."
+                            : "Bill photos will be saved to a folder in your Google Drive, with every bill added to a spreadsheet inside it. They'll be created on your first sync.")
+                            .foregroundStyle(.secondary)
+                        
+                        Text("Removing items from the sheet will not update in the app. Similarly, removing items from the app will not destroy any rows on the sheet. Uploads are one-time.").foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
+
+                    if !appSheetId.isEmpty,
+                       let url = URL(string: "https://docs.google.com/spreadsheets/d/\(appSheetId)") {
+                        Link(destination: url) {
+                            Label("Open \"\(SyncService.appSheetName)\" Spreadsheet", systemImage: "tablecells")
+                        }
+                    }
+                    if !appFolderId.isEmpty,
+                       let url = URL(string: "https://drive.google.com/drive/folders/\(appFolderId)") {
+                        Link(destination: url) {
+                            Label("Open \"\(SyncService.appFolderName)\" Folder", systemImage: "folder")
+                        }
+                    }
+                }
+            }
         }
         .navigationTitle("Settings")
-        .sheet(isPresented: $showSheetEditor) {
-            IDEditorSheet(
-                title: "Spreadsheet ID",
-                hint: "Paste the ID from your Google Sheets URL\nhttps://docs.google.com/spreadsheets/d/[THIS_PART]/edit",
-                kind: .sheet,
-                value: $sheetId,
-                isValid: $sheetValid
-            )
-        }
-        .sheet(isPresented: $showFolderEditor) {
-            IDEditorSheet(
-                title: "Drive Folder ID",
-                hint: "Paste the ID from your Google Drive folder URL\nhttps://drive.google.com/drive/folders/[THIS_PART]",
-                kind: .driveFolder,
-                value: $folderId,
-                isValid: $folderValid
-            )
-        }
-        .onChange(of: sheetId) { _, _ in trySyncIfReady() }
-        .onChange(of: folderId) { _, _ in trySyncIfReady() }
-    }
-
-    private func trySyncIfReady() {
-        guard auth.isSignedIn, !sheetId.isEmpty, !folderId.isEmpty else { return }
-        Task { await sync.syncPending() }
     }
 
     private func signIn() {
@@ -98,140 +74,9 @@ struct SettingsView: View {
 
         Task {
             try? await auth.signIn(presenting: rootVC)
-            trySyncIfReady()
-        }
-    }
-}
-
-enum IDKind {
-    case sheet
-    case driveFolder
-}
-
-struct IDEditorSheet: View {
-    let title: String
-    let hint: String
-    let kind: IDKind
-    @Binding var value: String
-    @Binding var isValid: Bool
-    @State private var draft = ""
-    @State private var validationState: ValidationState = .idle
-    @EnvironmentObject var auth: GoogleAuthService
-    @Environment(\.dismiss) private var dismiss
-
-    enum ValidationState {
-        case idle, checking, valid, invalid(String)
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField(title, text: $draft)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .onChange(of: draft) { _, _ in
-                            validationState = .idle
-                        }
-                } footer: {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(hint)
-
-                        switch validationState {
-                        case .idle:
-                            EmptyView()
-                        case .checking:
-                            HStack(spacing: 4) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Checking access...")
-                            }
-                            .foregroundStyle(.secondary)
-                        case .valid:
-                            Label("Accessible", systemImage: "checkmark.circle")
-                                .foregroundStyle(.green)
-                        case .invalid(let msg):
-                            Label(msg, systemImage: "xmark.circle")
-                                .foregroundStyle(.red)
-                        }
-                    }
-                }
-            }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        Task { await validateAndSave() }
-                    }
-                    .disabled(draft.isEmpty)
-                }
+            if auth.isSignedIn {
+                await sync.syncPending()
             }
         }
-        .onAppear { draft = value }
-        .presentationDetents([.medium])
-    }
-
-    private func validateAndSave() async {
-        let cleanId = cleanID(from: draft)
-
-        // Drive folders can't be validated with drive.file scope — just save
-        if kind == .driveFolder {
-            value = cleanId
-            isValid = true
-            dismiss()
-            return
-        }
-
-        // Validate sheets
-        validationState = .checking
-        let token = auth.accessToken ?? ""
-
-        guard !token.isEmpty else {
-            validationState = .invalid("Not signed in")
-            return
-        }
-
-        let url = URL(string: "https://sheets.googleapis.com/v4/spreadsheets/\(cleanId)?fields=spreadsheetId")!
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                validationState = .invalid("Connection failed")
-                return
-            }
-
-            if http.statusCode == 200 {
-                validationState = .valid
-                value = cleanId
-                isValid = true
-                dismiss()
-            } else if http.statusCode == 404 {
-                validationState = .invalid("Not found")
-                value = cleanId
-                isValid = false
-            } else if http.statusCode == 403 {
-                validationState = .invalid("No access — check sharing")
-                value = cleanId
-                isValid = false
-            } else {
-                validationState = .invalid("Error (\(http.statusCode))")
-                value = cleanId
-                isValid = false
-            }
-        } catch {
-            validationState = .invalid("Connection failed")
-            value = cleanId
-            isValid = false
-        }
-    }
-
-    private func cleanID(from input: String) -> String {
-        input.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

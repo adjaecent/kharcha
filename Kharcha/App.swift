@@ -6,6 +6,7 @@ struct KharchaApp: App {
     @StateObject private var db: DatabaseService
     @StateObject private var auth: GoogleAuthService
     @StateObject private var sync: SyncService
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         let database = (try? DatabaseService()) ?? DatabaseService.empty()
@@ -27,7 +28,13 @@ struct KharchaApp: App {
                     GIDSignIn.sharedInstance.handle(url)
                 }
                 .task {
+                    BillProcessor.resumeAllPending(db: db)
                     await auth.restorePreviousSignIn()
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active {
+                        Task { await sync.syncPending() }
+                    }
                 }
         }
     }

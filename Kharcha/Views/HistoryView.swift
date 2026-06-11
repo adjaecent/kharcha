@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 
 struct HistoryView: View {
     @EnvironmentObject var db: DatabaseService
@@ -30,14 +31,15 @@ struct HistoryView: View {
             }
         }
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
-        .onChange(of: searchText) { _, query in
-            loadBills(query: query)
-        }
-        .onAppear {
-            loadBills()
-        }
-        .refreshable {
-            loadBills(query: searchText)
+        .task(id: searchText) {
+            // Live-updates the list as OCR, extraction, and sync mutate rows
+            do {
+                for try await fresh in db.observeBills(matching: searchText) {
+                    bills = fresh
+                }
+            } catch {
+                print("Failed to observe bills: \(error)")
+            }
         }
     }
 
@@ -45,20 +47,7 @@ struct HistoryView: View {
         for index in offsets {
             let bill = bills[index]
             try? db.delete(id: bill.id)
-            try? FileManager.default.removeItem(atPath: bill.imagePath)
-        }
-        bills.remove(atOffsets: offsets)
-    }
-
-    private func loadBills(query: String = "") {
-        do {
-            if query.isEmpty {
-                bills = try db.fetchAll()
-            } else {
-                bills = try db.search(query: query)
-            }
-        } catch {
-            print("Failed to load bills: \(error)")
+            try? FileManager.default.removeItem(atPath: bill.absoluteImagePath)
         }
     }
 }
@@ -66,12 +55,6 @@ struct HistoryView: View {
 struct BillRow: View {
     let bill: Bill
     @EnvironmentObject var auth: GoogleAuthService
-    @AppStorage("sheet_id") private var sheetId = ""
-    @AppStorage("folder_id") private var folderId = ""
-
-    private var syncable: Bool {
-        auth.isSignedIn && !sheetId.isEmpty && !folderId.isEmpty
-    }
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -82,7 +65,7 @@ struct BillRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Group {
-                if let image = UIImage(contentsOfFile: bill.imagePath) {
+                if let image = Self.thumbnail(atPath: bill.absoluteImagePath) {
                     Image(uiImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -128,8 +111,24 @@ struct BillRow: View {
 
             Spacer()
 
-            StatusIndicator(status: bill.status, syncable: syncable)
+            StatusIndicator(status: bill.status, syncable: auth.isSignedIn)
         }
+    }
+
+    /// Decodes a small thumbnail instead of the full bitmap — stored images
+    /// can be up to 2048×8192 (stitched PDFs), far too big to decode per row.
+    private static func thumbnail(atPath path: String) -> UIImage? {
+        let url = URL(fileURLWithPath: path)
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 168,
+        ]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
     }
 }
 

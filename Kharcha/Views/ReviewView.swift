@@ -16,12 +16,19 @@ struct ReviewView: View {
     @State private var gstin = ""
     @State private var billNo = ""
     @State private var category = "Miscellaneous"
-    @State private var processingPhase: ProcessingPhase = .ocr
+    @State private var timedOut = false
 
     enum ProcessingPhase {
         case ocr
         case extracting
         case done
+    }
+
+    /// Derived from the observed bill row, so it can't drift out of sync.
+    private var processingPhase: ProcessingPhase {
+        guard let bill else { return .ocr }
+        if bill.extractionDone || timedOut { return .done }
+        return bill.rawText != nil ? .extracting : .ocr
     }
 
     private let currencies = Currency.allCases
@@ -49,7 +56,7 @@ struct ReviewView: View {
     var body: some View {
         Form {
             if let bill {
-                if let image = UIImage(contentsOfFile: bill.imagePath) {
+                if let image = UIImage(contentsOfFile: bill.absoluteImagePath) {
                     Section {
                         Image(uiImage: image)
                             .resizable()
@@ -112,10 +119,10 @@ struct ReviewView: View {
                 }
 
                 Section("Tax") {
-                    TextField("GST Amount", text: $gstAmount)
+                    TextField("Tax Amount", text: $gstAmount)
                         .keyboardType(.decimalPad)
                         .disabled(isLocked)
-                    TextField("GSTIN", text: $gstin)
+                    TextField("Tax ID", text: $gstin)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                         .disabled(isLocked)
@@ -142,7 +149,12 @@ struct ReviewView: View {
         }
         .navigationTitle("Review Bill")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: billId) { @MainActor in await loadBill() }
+        .task(id: billId) { await loadBill() }
+        .task {
+            // Unlock the form for manual entry if extraction never finishes
+            try? await Task.sleep(for: .seconds(30))
+            timedOut = true
+        }
     }
 
     private func loadBill() async {
@@ -150,40 +162,24 @@ struct ReviewView: View {
 
         bill = fetched
         populateFields(from: fetched)
+        guard !fetched.extractionDone else { return }
 
-        // Already fully processed
-        if fetched.extractionDone {
-            processingPhase = .done
-            return
-        }
-
-        // Already has OCR text but extraction not done
-        if fetched.rawText != nil {
-            processingPhase = .extracting
-        }
-
-        // Poll until fully done
-        for _ in 0..<60 {
-            try? await Task.sleep(for: .milliseconds(500))
-            if let fresh = try? db.fetch(id: billId) {
+        // Follow the pipeline's progress; phase indicators derive from the row
+        do {
+            for try await fresh in db.observeBill(id: billId) {
+                guard let fresh else { return }
+                bill = fresh
                 if fresh.extractionDone {
-                    bill = fresh
-                    populateFields(from: fresh)
-                    processingPhase = .done
+                    // Don't clobber edits the user made after a timeout unlock
+                    if !timedOut {
+                        populateFields(from: fresh)
+                    }
                     return
                 }
-                if fresh.rawText != nil && processingPhase == .ocr {
-                    processingPhase = .extracting
-                }
             }
+        } catch {
+            print("Failed to observe bill: \(error)")
         }
-
-        // Timed out — unlock the form anyway
-        if let fresh = try? db.fetch(id: billId) {
-            bill = fresh
-            populateFields(from: fresh)
-        }
-        processingPhase = .done
     }
 
     private static let dateFormatter: DateFormatter = {
@@ -203,6 +199,17 @@ struct ReviewView: View {
         category = bill.category ?? "Miscellaneous"
     }
 
+    /// The decimal pad inserts the locale's separator (e.g. "," in many
+    /// locales), which `Double(_:)` rejects — fall back to locale parsing.
+    private static func parseAmount(_ text: String) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        if let value = Double(trimmed) { return value }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.number(from: trimmed)?.doubleValue
+    }
+
     private func saveBill() {
         guard let bill else { return }
 
@@ -214,9 +221,9 @@ struct ReviewView: View {
         var updated = bill
         updated.vendor = vendor.isEmpty ? nil : vendor
         updated.date = Self.dateFormatter.string(from: date)
-        updated.amount = Double(amount)
+        updated.amount = Self.parseAmount(amount)
         updated.currency = currency
-        updated.gstAmount = Double(gstAmount)
+        updated.gstAmount = Self.parseAmount(gstAmount)
         updated.gstin = gstin.isEmpty ? nil : gstin
         updated.billNo = billNo.isEmpty ? nil : billNo
         updated.category = category

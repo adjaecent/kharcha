@@ -8,30 +8,24 @@ struct CaptureView: View {
     @State private var showFilePicker = false
     @State private var capturedBillId: String?
     @State private var navigateToReview = false
+    @State private var showSyncErrorAlert = false
 
     var body: some View {
         HistoryView()
-            .safeAreaInset(edge: .bottom) {
-                if let error = sync.lastError {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                        Text("Sync failed: \(error)")
-                            .lineLimit(2)
-                        Spacer()
-                        Button("Retry") {
-                            Task { await sync.syncPending() }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-                    .font(.caption)
-                    .padding(12)
-                    .background(.red.opacity(0.1))
-                    .foregroundStyle(.red)
-                }
-            }
             .navigationTitle("Kharcha")
             .toolbar {
+                if sync.lastError != nil {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            showSyncErrorAlert = true
+                        } label: {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .foregroundStyle(.red)
+                        }
+                        .accessibilityLabel("Sync error")
+                    }
+                }
+
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button("Take Photo", systemImage: "camera") { showCamera = true }
@@ -59,6 +53,14 @@ struct CaptureView: View {
                     ReviewView(billId: billId)
                 }
             }
+            .alert("Sync Failed", isPresented: $showSyncErrorAlert) {
+                Button("Retry") {
+                    Task { await sync.syncPending() }
+                }
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(sync.lastError ?? "")
+            }
     }
 
     private static let filenameDateFormatter: DateFormatter = {
@@ -68,16 +70,7 @@ struct CaptureView: View {
     }()
 
     private func handleCapture(_ image: UIImage) {
-        let maxDimension: CGFloat = 2048
-        let resized: UIImage
-        if max(image.size.width, image.size.height) > maxDimension {
-            let scale = maxDimension / max(image.size.width, image.size.height)
-            let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-            let renderer = UIGraphicsImageRenderer(size: newSize)
-            resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
-        } else {
-            resized = image
-        }
+        let resized = Self.resizeForStorage(image)
         guard let data = resized.jpegData(compressionQuality: 0.80) else { return }
 
         let dateStr = Self.filenameDateFormatter.string(from: Date())
@@ -90,43 +83,38 @@ struct CaptureView: View {
 
         do {
             try data.write(to: filePath)
-            let bill = Bill(imagePath: filePath.path)
+            let bill = Bill(imagePath: "bill_images/\(fileName)")
             try db.insert(bill)
             capturedBillId = bill.id
 
-            Task {
-                var updated = bill
-
-                // Phase 1: OCR
-                let ocr = OCRService()
-                if let rawText = try? await ocr.recognizeText(from: image) {
-                    updated.rawText = rawText
-                    try? db.update(updated)
-                }
-
-                // Phase 2: Field extraction (if Apple Intelligence available)
-                if ExtractionService.isAvailable, let rawText = updated.rawText {
-                    let extractor = ExtractionService()
-                    if let fields = await extractor.extract(from: rawText) {
-                        updated.vendor = fields.vendor
-                        updated.date = fields.date
-                        updated.amount = fields.amount
-                        updated.currency = fields.currency ?? "INR"
-                        updated.gstAmount = fields.gstAmount
-                        updated.gstin = fields.gstin
-                        updated.billNo = fields.billNo
-                        updated.category = fields.category
-                    }
-                }
-
-                updated.extractionDone = true
-                try? db.update(updated)
-            }
+            Task { await BillProcessor.process(billId: bill.id, image: image, db: db) }
 
             navigateToReview = true
         } catch {
             print("Failed to save bill: \(error)")
         }
+    }
+
+    /// Caps the longest edge at 2048px, except for very tall images (stitched
+    /// multi-page PDFs, long thermal receipts) where capping the height would
+    /// destroy text resolution — those cap width at 2048 and height at 8192.
+    private static func resizeForStorage(_ image: UIImage) -> UIImage {
+        let maxDimension: CGFloat = 2048
+        let maxHeight: CGFloat = 8192
+        let w = image.size.width
+        let h = image.size.height
+
+        let scale: CGFloat
+        if h / w > 2.5 {
+            scale = min(1, maxDimension / w, maxHeight / h)
+        } else {
+            scale = min(1, maxDimension / max(w, h))
+        }
+        guard scale < 1 else { return image }
+
+        let newSize = CGSize(width: w * scale, height: h * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
     }
 }
 
