@@ -46,7 +46,7 @@ struct SettingsView: View {
                             : "Bill photos will be saved to a folder in your Google Drive, with every bill added to a spreadsheet inside it. They'll be created on your first sync.")
                             .foregroundStyle(.secondary)
                         
-                        Text("Removing items from the sheet will not update in the app. Similarly, removing items from the app will not destroy any rows on the sheet. Uploads are one-time.").foregroundStyle(.secondary)
+                        Text("Removing items from the sheet will not update in the app. Similarly, removing items from the app will not destroy any rows on the sheet. Each bill is uploaded only once.").foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
 
