@@ -15,10 +15,10 @@ struct ExtractedBillFields: Sendable {
     @Guide(description: "Three-letter currency code", .anyOf(["INR", "USD", "EUR", "GBP", "ZAR", "KRW", "JPY", "CAD", "ISK"]))
     var currency: String?
 
-    @Guide(description: "Total tax amount. Sum of CGST + SGST, or IGST. Look for lines labeled CGST/SGST/IGST with small amounts. Do not use item prices or subtotals.")
+    @Guide(description: "Total tax amount. On Indian bills: sum of CGST + SGST, or IGST. On other bills: the VAT, sales tax, or service tax amount. Look for lines labeled CGST/SGST/IGST/VAT/Tax with amounts smaller than the total. Do not use item prices or subtotals.")
     var gstAmount: Double?
 
-    @Guide(description: "The 15-character GSTIN number (format: 2 digits + 5 letters + 4 digits + 1 letter + 1 alphanumeric + 1 alphanumeric). This is NOT the FSSAI number.")
+    @Guide(description: "The seller's tax registration number. On Indian bills this is the 15-character GSTIN (format: 2 digits + 5 letters + 4 digits + 1 letter + 1 alphanumeric + the letter Z + 1 alphanumeric); it is NOT the FSSAI number. On other bills, use the VAT or tax registration number.")
     var gstin: String?
 
     @Guide(description: "The bill number or invoice number")
@@ -54,10 +54,12 @@ final class ExtractionService {
         let prompt = """
         Extract bill details from the following receipt text. \
         The amount should be the Grand Total (final amount paid). \
-        GSTIN is a 15-character tax ID starting with 2 digits — do not confuse with FSSAI license numbers. \
+        The tax amount is labeled CGST/SGST/IGST on Indian bills, or VAT/sales tax elsewhere. \
+        The tax registration number on Indian bills is the 15-character GSTIN starting with 2 digits — do not confuse with FSSAI license numbers; \
+        elsewhere it is the VAT or tax registration number. \
         If a field cannot be confidently determined, leave it null.
 
-        \(String(ocrText.prefix(2000)))
+        \(String(ocrText.prefix(4000)))
         """
 
         do {

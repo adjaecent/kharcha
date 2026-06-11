@@ -135,15 +135,11 @@ struct DocumentPicker: UIViewControllerRepresentable {
 
             let accessing = url.startAccessingSecurityScopedResource()
 
-            print("DocumentPicker: picked \(url.lastPathComponent), extension: \(url.pathExtension), accessing: \(accessing)")
-
             let image: UIImage?
             if url.pathExtension.lowercased() == "pdf" {
                 image = renderPDFToImage(url: url)
-                print("DocumentPicker: PDF render result: \(image != nil)")
             } else {
                 image = loadImage(url: url)
-                print("DocumentPicker: image load result: \(image != nil)")
             }
 
             if accessing { url.stopAccessingSecurityScopedResource() }
@@ -168,10 +164,28 @@ struct DocumentPicker: UIViewControllerRepresentable {
             return UIImage(data: data)
         }
 
+        /// Renders up to 4 pages stitched vertically into one image, so
+        /// multi-page invoices keep their tax summary / line items for OCR.
         private func renderPDFToImage(url: URL) -> UIImage? {
-            guard let document = PDFDocument(url: url),
-                  let page = document.page(at: 0) else { return nil }
-            return page.thumbnail(of: CGSize(width: 2048, height: 2048), for: .mediaBox)
+            guard let document = PDFDocument(url: url), document.pageCount > 0 else { return nil }
+
+            let pageCount = min(document.pageCount, 4)
+            let pages = (0..<pageCount).compactMap { index in
+                document.page(at: index)?.thumbnail(of: CGSize(width: 2048, height: 2048), for: .mediaBox)
+            }
+            guard let first = pages.first else { return nil }
+            if pages.count == 1 { return first }
+
+            let width = pages.map(\.size.width).max()!
+            let height = pages.reduce(0) { $0 + $1.size.height }
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height))
+            return renderer.image { _ in
+                var y: CGFloat = 0
+                for page in pages {
+                    page.draw(at: CGPoint(x: (width - page.size.width) / 2, y: y))
+                    y += page.size.height
+                }
+            }
         }
     }
 }
