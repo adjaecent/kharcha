@@ -23,7 +23,7 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: Kharcha/Resources/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.kharcha.app
+        PRODUCT_BUNDLE_IDENTIFIER: kharcha.app
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.2"
