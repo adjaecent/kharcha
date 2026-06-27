@@ -57,7 +57,7 @@ struct ReviewView: View {
 
     var body: some View {
         Form {
-            if let bill {
+            if bill != nil {
                 if let displayImage {
                     Section {
                         Image(uiImage: displayImage)
