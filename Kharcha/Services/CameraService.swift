@@ -133,23 +133,23 @@ struct DocumentPicker: UIViewControllerRepresentable {
                 return
             }
 
-            let accessing = url.startAccessingSecurityScopedResource()
-
-            let image: UIImage?
-            if url.pathExtension.lowercased() == "pdf" {
-                image = renderPDFToImage(url: url)
-            } else {
-                image = loadImage(url: url)
-            }
-
-            if accessing { url.stopAccessingSecurityScopedResource() }
-
-            let capturedImage = image
+            let isPDF = url.pathExtension.lowercased() == "pdf"
             let onCapture = self.onCapture
             let dismiss = self.dismiss
+
+            // Decoding/rendering a PDF or large image is CPU- and memory-heavy.
+            // The picker delegate is called on the main thread, so doing it
+            // inline freezes the whole UI. Render off the main actor, then hop
+            // back to deliver the result.
             Task { @MainActor in
-                if let capturedImage {
-                    onCapture(capturedImage)
+                let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                    return isPDF ? Coordinator.renderPDFToImage(url: url) : Coordinator.loadImage(url: url)
+                }.value
+
+                if let image {
+                    onCapture(image)
                 }
                 dismiss()
             }
@@ -159,14 +159,14 @@ struct DocumentPicker: UIViewControllerRepresentable {
             dismiss()
         }
 
-        private func loadImage(url: URL) -> UIImage? {
+        nonisolated private static func loadImage(url: URL) -> UIImage? {
             guard let data = try? Data(contentsOf: url) else { return nil }
             return UIImage(data: data)
         }
 
         /// Renders up to 4 pages stitched vertically into one image, so
         /// multi-page invoices keep their tax summary / line items for OCR.
-        private func renderPDFToImage(url: URL) -> UIImage? {
+        nonisolated private static func renderPDFToImage(url: URL) -> UIImage? {
             guard let document = PDFDocument(url: url), document.pageCount > 0 else { return nil }
 
             let pageCount = min(document.pageCount, 4)

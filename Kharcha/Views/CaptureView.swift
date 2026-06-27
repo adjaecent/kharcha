@@ -70,35 +70,53 @@ struct CaptureView: View {
     }()
 
     private func handleCapture(_ image: UIImage) {
-        let resized = Self.resizeForStorage(image)
-        guard let data = resized.jpegData(compressionQuality: 0.80) else { return }
-
         let dateStr = Self.filenameDateFormatter.string(from: Date())
         let shortId = UUID().uuidString.prefix(8).lowercased()
         let fileName = "\(dateStr)_\(shortId).jpg"
         let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let imagesDir = docsDir.appendingPathComponent("bill_images", isDirectory: true)
-        try? FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
         let filePath = imagesDir.appendingPathComponent(fileName)
 
-        do {
-            try data.write(to: filePath)
-            let bill = Bill(imagePath: "bill_images/\(fileName)")
-            try db.insert(bill)
-            capturedBillId = bill.id
+        Task {
+            // Resize + JPEG encode + write off the main thread so a large
+            // capture (e.g. a stitched multi-page PDF) doesn't freeze the UI.
+            // Returns the resized image so the processor reuses it without a
+            // second decode, and the original `image` is never read on main.
+            let resized = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                let resized = Self.resizeForStorage(image)
+                guard let data = resized.jpegData(compressionQuality: 0.80) else { return nil }
+                do {
+                    try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+                    try data.write(to: filePath)
+                } catch {
+                    return nil
+                }
+                return resized
+            }.value
 
-            Task { await BillProcessor.process(billId: bill.id, image: image, db: db) }
+            guard let resized else {
+                print("Failed to save bill image")
+                return
+            }
 
-            navigateToReview = true
-        } catch {
-            print("Failed to save bill: \(error)")
+            do {
+                let bill = Bill(imagePath: "bill_images/\(fileName)")
+                try db.insert(bill)
+                capturedBillId = bill.id
+
+                Task { await BillProcessor.process(billId: bill.id, image: resized, db: db) }
+
+                navigateToReview = true
+            } catch {
+                print("Failed to save bill: \(error)")
+            }
         }
     }
 
     /// Caps the longest edge at 2048px, except for very tall images (stitched
     /// multi-page PDFs, long thermal receipts) where capping the height would
     /// destroy text resolution — those cap width at 2048 and height at 8192.
-    private static func resizeForStorage(_ image: UIImage) -> UIImage {
+    nonisolated private static func resizeForStorage(_ image: UIImage) -> UIImage {
         let maxDimension: CGFloat = 2048
         let maxHeight: CGFloat = 8192
         let w = image.size.width

@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 
 struct ReviewView: View {
     let billId: String
@@ -8,6 +9,7 @@ struct ReviewView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var bill: Bill?
+    @State private var displayImage: UIImage?
     @State private var vendor = ""
     @State private var date = Date()
     @State private var amount = ""
@@ -56,9 +58,9 @@ struct ReviewView: View {
     var body: some View {
         Form {
             if let bill {
-                if let image = UIImage(contentsOfFile: bill.absoluteImagePath) {
+                if let displayImage {
                     Section {
-                        Image(uiImage: image)
+                        Image(uiImage: displayImage)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(maxHeight: 250)
@@ -150,11 +152,39 @@ struct ReviewView: View {
         .navigationTitle("Review Bill")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: billId) { await loadBill() }
+        .task(id: billId) { await loadDisplayImage() }
         .task {
             // Unlock the form for manual entry if extraction never finishes
             try? await Task.sleep(for: .seconds(30))
             timedOut = true
         }
+    }
+
+    /// Decodes the bill image once, downsampled to display size, off the main
+    /// thread. The previous inline `UIImage(contentsOfFile:)` in `body` re-decoded
+    /// the full image (up to a 2048x8192 stitched PDF) on every keystroke, which
+    /// froze the form. ImageIO downsampling avoids decoding the full-size bitmap.
+    private func loadDisplayImage() async {
+        guard let path = (try? db.fetch(id: billId))?.absoluteImagePath else { return }
+        let image = await Task.detached(priority: .userInitiated) {
+            Self.downsample(path: path, maxPixel: 1500)
+        }.value
+        displayImage = image
+    }
+
+    nonisolated private static func downsample(path: String, maxPixel: CGFloat) -> UIImage? {
+        let url = URL(fileURLWithPath: path)
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
     }
 
     private func loadBill() async {
