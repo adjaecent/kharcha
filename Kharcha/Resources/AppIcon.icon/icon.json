@@ -1,0 +1,91 @@
+{
+  "fill" : "automatic",
+  "groups" : [
+    {
+      "blend-mode" : "normal",
+      "blur-material" : null,
+      "hidden" : false,
+      "layers" : [
+        {
+          "fill" : {
+            "solid" : "display-p3:0.00151,0.74947,0.10810,1.00000"
+          },
+          "glass" : false,
+          "image-name" : "kharcha-logo-cent.svg",
+          "name" : "kharcha-logo-cent",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              -203.77300000000002,
+              -225.0120625
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "solid" : "extended-gray:1.00000,1.00000"
+          },
+          "glass" : false,
+          "image-name" : "kharcha-logo-bg.svg",
+          "name" : "kharcha-logo-bg",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              -200,
+              -224.7890625
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "solid" : "extended-gray:1.00000,1.00000"
+          },
+          "glass" : false,
+          "image-name" : "kharcha-total.svg",
+          "name" : "kharcha-total",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              277.359375
+            ]
+          }
+        },
+        {
+          "blend-mode" : "normal",
+          "fill" : {
+            "solid" : "extended-gray:1.00000,1.00000"
+          },
+          "glass" : false,
+          "image-name" : "kharcha-list.svg",
+          "name" : "kharcha-list",
+          "opacity" : 1
+        },
+        {
+          "blend-mode" : "normal",
+          "fill" : {
+            "solid" : "display-p3:0.00151,0.74947,0.10810,1.00000"
+          },
+          "glass" : true,
+          "image-name" : "kharcha-receipt.svg",
+          "name" : "kharcha-receipt"
+        }
+      ],
+      "lighting" : "combined",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 1
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 1
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "iOS"
+    ]
+  }
+}

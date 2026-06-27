@@ -7,8 +7,10 @@ final class GoogleAuthService: ObservableObject {
     @Published var isSignedIn = false
     @Published var isRestoring = true
 
+    // drive.file is non-sensitive and grants Sheets API access to spreadsheets
+    // the app itself created, which is all Kharcha ever touches. Keeping to this
+    // single scope avoids Google's restricted-scope verification (CASA).
     private let driveScope = "https://www.googleapis.com/auth/drive.file"
-    private let sheetsScope = "https://www.googleapis.com/auth/spreadsheets"
 
     var accessToken: String? {
         currentUser?.accessToken.tokenString
@@ -30,7 +32,7 @@ final class GoogleAuthService: ObservableObject {
         let result = try await GIDSignIn.sharedInstance.signIn(
             withPresenting: viewController,
             hint: nil,
-            additionalScopes: [driveScope, sheetsScope]
+            additionalScopes: [driveScope]
         )
         currentUser = result.user
         isSignedIn = true
