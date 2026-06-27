@@ -1,0 +1,36 @@
+KHARCHA - APP REVIEW NOTES
+
+SIGN-IN IS OPTIONAL
+
+Google sign-in is NOT required to use Kharcha. The app fully works without an account: you can capture bills, read them on-device, and review and save the details locally. Signing in with Google is optional and only adds syncing of bills to the user's own Google Drive.
+
+To test the optional sync, a demo Google account is provided in the demo account fields of this submission.
+
+
+HOW TO TEST
+
+1. Launch the app. You can start using it immediately, without signing in.
+
+2. Tap the plus button (top right) and choose "Take Photo", "Choose Photo", or "Choose File" (for a PDF invoice). Any sample receipt image works.
+
+3. The app reads the bill on-device and fills in vendor, amount, date, and tax. Review the form and tap "Save". This all works without an account.
+
+4. (Optional) To test sync, tap "Sign in with Google" and use the demo account provided in the demo account fields. Kharcha asks only for access to files it creates in Drive, so the consent screen lists Google Drive access for app-created files.
+
+5. (Optional) After signing in, a saved bill syncs to a folder named "Kharcha Bills" in the test account's Google Drive, and a row is added to the "List" spreadsheet inside it.
+
+
+NOTES FOR THE REVIEWER
+
+- All text recognition and detail extraction happens on-device (Apple Vision and Apple Intelligence). No bill data is sent to any server owned by us.
+
+- The only network access is to Google Drive and Google Sheets, using the signed-in account, to store the user's own bills.
+
+- Detail extraction uses Apple Intelligence (Foundation Models) when available. On devices without Apple Intelligence, the app still works: text recognition runs and the user fills in details manually. The form unlocks for manual entry automatically.
+
+- Camera and photo permissions are used only to capture or select a bill image, as described in the permission prompts.
+
+
+CONTACT
+
+mail@kitallis.in
