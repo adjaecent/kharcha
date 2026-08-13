@@ -1,0 +1,185 @@
+name: iOS Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tramline-input:
+        required: false
+      dry_run:
+        description: "Build and sign the IPA but skip the TestFlight upload"
+        type: boolean
+        default: false
+
+env:
+  SCHEME: Kharcha
+  BUNDLE_ID: kharcha.app
+  TEAM_ID: 6XCS8KZXDA
+
+jobs:
+  release:
+    runs-on: macos-26
+
+    steps:
+      # This action parses the Tramline JSON blob and checks out commit_ref
+      # itself, so no separate checkout step. Defaulting to '{}' matters: the
+      # action runs json.loads() on the raw input, and an unset input is "",
+      # which raises. That only bites on manual dispatches, never via Tramline.
+      - name: Configure Tramline
+        id: tramline
+        uses: tramlinehq/deploy-action@v0.1.7
+        with:
+          input: ${{ github.event.inputs.tramline-input || '{}' }}
+
+      # Tramline supplies these on a real release. On a manual dry run they come
+      # back empty, so fall back to the project's own version and the run number.
+      - name: Resolve version
+        id: version
+        run: |
+          NAME="${{ steps.tramline.outputs.version_name }}"
+          CODE="${{ steps.tramline.outputs.version_code }}"
+          [ -z "$NAME" ] && NAME="1.0.0"
+          [ -z "$CODE" ] && CODE="${{ github.run_number }}"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "Building $NAME ($CODE)"
+
+      - name: Select Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$latest" ]; then
+            sudo xcode-select -s "$latest/Contents/Developer"
+          fi
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      # Signing is a hybrid: we seed the keychain with the long-lived distribution
+      # certificate, and let -allowProvisioningUpdates manage only the provisioning
+      # profile. Without the seeded cert, every run would find no distribution
+      # private key and mint a brand new certificate, exhausting the 3-cert account
+      # limit after a handful of runs.
+      - name: Create a keychain for signing
+        run: |
+          # Ephemeral, lives only for this job, deleted in the cleanup step.
+          # No lock timeout, or codesign hangs waiting on a prompt.
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings build.keychain
+          security default-keychain -s build.keychain
+          security list-keychains -d user -s build.keychain login.keychain-db
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+        env:
+          KEYCHAIN_PASSWORD: kharcha-ci-temp
+
+      - name: Import the distribution certificate
+        run: |
+          echo -n "$DIST_CERT_P12" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" \
+            -k build.keychain \
+            -P "$DIST_CERT_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/dist.p12"
+
+          # Grant codesign non-interactive access to the imported private key,
+          # otherwise signing blocks on a GUI prompt that never gets answered.
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" build.keychain > /dev/null
+
+          echo "Identities available for signing:"
+          security find-identity -v -p codesigning build.keychain
+
+          # A p12 in an unsupported format can fail to import while still exiting 0,
+          # so assert the identity really landed rather than failing later in archive.
+          if ! security find-identity -v -p codesigning build.keychain | grep -q "Apple Distribution"; then
+            echo "::error::No valid Apple Distribution identity in the keychain. find-identity -v lists only unexpired certs, so either DIST_CERT_P12 has expired (Tramline Inc. certs are 1-year) or the p12 was exported without its private key. Re-export from Keychain Access and update the secret."
+            exit 1
+          fi
+        env:
+          KEYCHAIN_PASSWORD: kharcha-ci-temp
+          DIST_CERT_P12: ${{ secrets.DIST_CERT_P12 }}
+          # The p12 is currently exported without a password, so this secret is
+          # intentionally unset and resolves to "". Set it if you ever re-export
+          # with one; security import takes -P "" fine for a passwordless p12.
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
+
+      - name: Install the App Store Connect API key
+        run: |
+          mkdir -p ~/private_keys
+          echo -n "${{ secrets.APPSTORE_API_PRIVATE_KEY }}" | base64 --decode > ~/private_keys/AuthKey_${{ secrets.APPSTORE_API_KEY_ID }}.p8
+          # altool and friends look here by convention
+          mkdir -p ~/.appstoreconnect/private_keys
+          cp ~/private_keys/AuthKey_${{ secrets.APPSTORE_API_KEY_ID }}.p8 ~/.appstoreconnect/private_keys/
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project Kharcha.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/Kharcha.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APPSTORE_API_KEY_ID }}.p8 \
+            -authenticationKeyID ${{ secrets.APPSTORE_API_KEY_ID }} \
+            -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }} \
+            MARKETING_VERSION=${{ steps.version.outputs.name }} \
+            CURRENT_PROJECT_VERSION=${{ steps.version.outputs.code }} \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM=$TEAM_ID
+
+      - name: Export the IPA
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>destination</key><string>export</string>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          PLIST
+
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Kharcha.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APPSTORE_API_KEY_ID }}.p8 \
+            -authenticationKeyID ${{ secrets.APPSTORE_API_KEY_ID }} \
+            -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }}
+
+          ls -la "$RUNNER_TEMP/export"
+
+      - name: Upload to TestFlight
+        if: ${{ !inputs.dry_run }}
+        run: |
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$RUNNER_TEMP/export/$SCHEME.ipa" \
+            --apiKey ${{ secrets.APPSTORE_API_KEY_ID }} \
+            --apiIssuer ${{ secrets.APPSTORE_ISSUER_ID }}
+
+      - name: Upload the IPA as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kharcha-${{ steps.version.outputs.name }}-${{ steps.version.outputs.code }}
+          path: ${{ runner.temp }}/export/*.ipa
+
+      - name: Note the skipped upload
+        if: ${{ inputs.dry_run }}
+        run: echo "::notice::Dry run, TestFlight upload skipped. The signed IPA is attached as an artifact."
+
+      - name: Clean up secrets
+        if: always()
+        run: |
+          rm -rf ~/private_keys ~/.appstoreconnect/private_keys
+          security delete-keychain build.keychain || true

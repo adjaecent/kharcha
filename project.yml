@@ -38,8 +38,8 @@ targets:
       properties:
         CFBundleName: Kharcha
         CFBundleDisplayName: Kharcha
-        CFBundleShortVersionString: "1.0.0"
-        CFBundleVersion: "6"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         ITSAppUsesNonExemptEncryption: false
         GIDClientID: "70391722206-m5u5anf4m015n0jcc3p6rqlertj9tonn.apps.googleusercontent.com"
         CFBundleURLTypes:
@@ -53,3 +53,13 @@ targets:
         UILaunchScreen: {}
         NSCameraUsageDescription: "Kharcha needs camera access to capture bill photos"
         NSPhotoLibraryUsageDescription: "Kharcha needs photo library access to select bill photos"
+
+schemes:
+  Kharcha:
+    build:
+      targets:
+        Kharcha: all
+    run:
+      config: Debug
+    archive:
+      config: Release

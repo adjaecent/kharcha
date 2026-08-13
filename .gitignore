@@ -13,3 +13,8 @@ Kharcha.xcodeproj/
 
 # Secrets (should never be committed)
 *.env
+Keys/
+*.p8
+*.p12
+*.mobileprovision
+*.cer
