@@ -51,8 +51,20 @@ jobs:
           fi
           xcodebuild -version
 
+      # Pinned release binary rather than brew: no Homebrew tap-trust noise from
+      # the runner image's preinstalled taps, a version that cannot drift under
+      # us, and it skips the brew update entirely.
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
+          echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
+        env:
+          XCODEGEN_VERSION: "2.46.0"
+
+      - name: Check XcodeGen
+        run: xcodegen --version
 
       - name: Generate the Xcode project
         run: xcodegen generate
@@ -174,7 +186,7 @@ jobs:
             --apiIssuer ${{ secrets.APPSTORE_ISSUER_ID }}
 
       - name: Upload the IPA as an artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Kharcha-${{ steps.version.outputs.name }}-${{ steps.version.outputs.code }}
           path: ${{ runner.temp }}/export/*.ipa
