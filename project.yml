@@ -25,7 +25,7 @@ targets:
         INFOPLIST_FILE: Kharcha/Resources/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: kharcha.app
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "6"
+        CURRENT_PROJECT_VERSION: "8"
         SWIFT_VERSION: "6.2"
         DEVELOPMENT_TEAM: "6XCS8KZXDA"
         CODE_SIGN_STYLE: Automatic

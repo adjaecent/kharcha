@@ -18,6 +18,7 @@ struct Bill: Identifiable, Codable, FetchableRecord, PersistableRecord, Sendable
     var gstin: String?
     var billNo: String?
     var category: String?
+    var paymentMethod: String?
     var rawText: String?
     var extractionDone: Bool
     var status: BillStatus
@@ -30,7 +31,7 @@ struct Bill: Identifiable, Codable, FetchableRecord, PersistableRecord, Sendable
 
     enum Columns: String, ColumnExpression {
         case id, imagePath, vendor, date, amount, currency
-        case gstAmount, gstin, billNo, category, rawText, extractionDone, status, driveURL, sheetAppended
+        case gstAmount, gstin, billNo, category, paymentMethod, rawText, extractionDone, status, driveURL, sheetAppended
         case createdAt, updatedAt
     }
 

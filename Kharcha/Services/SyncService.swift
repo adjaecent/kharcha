@@ -170,6 +170,7 @@ final class SyncService: ObservableObject {
     static let appSheetName = "List"
     static let folderIdKey = "app_folder_id"
     static let sheetIdKey = "app_sheet_id"
+    private static let paymentMethodHeaderKey = "sheet_payment_method_header_added"
 
     private static let roleKey = "kharcha_role"
     private static let folderMimeType = "application/vnd.google-apps.folder"
@@ -193,7 +194,7 @@ final class SyncService: ObservableObject {
     /// Returns the ID of the app-created "List" spreadsheet inside the
     /// Kharcha Bills folder, creating it (with a header row) on first sync.
     private func ensureAppSheet(folderId: String, token: String) async throws -> String {
-        try await ensureAppFile(
+        let sheetId = try await ensureAppFile(
             cacheKey: Self.sheetIdKey,
             name: Self.appSheetName,
             mimeType: Self.sheetMimeType,
@@ -201,6 +202,25 @@ final class SyncService: ObservableObject {
             parentId: folderId,
             token: token
         )
+        try await addPaymentMethodHeader(sheetId: sheetId, token: token)
+        return sheetId
+    }
+
+    /// Sheets created before the Payment Method column exists have an 11-column
+    /// header, leaving the new column unlabelled. Write just that one cell, once.
+    private func addPaymentMethodHeader(sheetId: String, token: String) async throws {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.paymentMethodHeaderKey) else { return }
+
+        let url = URL(string: "https://sheets.googleapis.com/v4/spreadsheets/\(sheetId)/values/L1?valueInputOption=RAW")!
+        let (_, http) = try await googleRequest(
+            url: url,
+            method: "PUT",
+            jsonBody: ["values": [["Payment Method"]]],
+            token: token
+        )
+        guard (200...299).contains(http.statusCode) else { return }
+        defaults.set(true, forKey: Self.paymentMethodHeaderKey)
     }
 
     private func ensureAppFile(
@@ -333,7 +353,10 @@ final class SyncService: ObservableObject {
     /// Column order must match `appendToSheet`'s row below.
     private static let headerRow: [Any] = [
         "Upload Date", "File", "Vendor", "Bill Date", "Bill Amount", "Currency",
-        "Tax Amount", "Tax Number", "Bill number", "Category", "Raw OCR data"
+        "Tax Amount", "Tax Number", "Bill number", "Category", "Raw OCR data",
+        // Appended at the end on purpose: inserting it next to Category would
+        // shift Raw OCR data for new rows only, misaligning every older row.
+        "Payment Method"
     ]
 
     private func appendToSheet(bill: Bill, sheetId: String, token: String) async throws {
@@ -348,7 +371,8 @@ final class SyncService: ObservableObject {
             bill.gstin ?? "",
             bill.billNo ?? "",
             bill.category ?? "Miscellaneous",
-            String((bill.rawText ?? "").prefix(5000))
+            String((bill.rawText ?? "").prefix(5000)),
+            bill.paymentMethod ?? ""
         ]
         try await appendRow(row, sheetId: sheetId, token: token)
     }

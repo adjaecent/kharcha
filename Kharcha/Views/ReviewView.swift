@@ -18,6 +18,8 @@ struct ReviewView: View {
     @State private var gstin = ""
     @State private var billNo = ""
     @State private var category = "Miscellaneous"
+    @State private var paymentMethod = ""
+    @State private var usedPaymentMethods: [String] = []
     @State private var timedOut = false
 
     enum ProcessingPhase {
@@ -51,6 +53,19 @@ struct ReviewView: View {
         "Miscellaneous",
     ]
 
+    static let defaultPaymentMethods = [
+        "Credit Card",
+        "Debit Card",
+        "Wire Transfer",
+        "Cash",
+    ]
+
+    /// Previously used methods first, then the defaults that aren't already
+    /// in that list, so the menu grows with whatever gets hand-typed.
+    private var paymentMethodSuggestions: [String] {
+        usedPaymentMethods + Self.defaultPaymentMethods.filter { !usedPaymentMethods.contains($0) }
+    }
+
     private var isLocked: Bool {
         processingPhase != .done || bill?.status == .uploaded
     }
@@ -74,10 +89,10 @@ struct ReviewView: View {
                             ProgressView()
                             switch processingPhase {
                             case .ocr:
-                                Text("Reading bill...")
+                                Text("Reading bill")
                                     .foregroundStyle(.secondary)
                             case .extracting:
-                                Text("Extracting details...")
+                                Text("Extracting details")
                                     .foregroundStyle(.secondary)
                             case .done:
                                 EmptyView()
@@ -120,6 +135,22 @@ struct ReviewView: View {
                     .disabled(isLocked)
                 }
 
+                Section("Payment Method") {
+                    HStack {
+                        TextField("Type or pick a method", text: $paymentMethod)
+                            .autocorrectionDisabled()
+                        Menu {
+                            ForEach(paymentMethodSuggestions, id: \.self) { method in
+                                Button(method) { paymentMethod = method }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.up.chevron.down")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .disabled(isLocked)
+                }
+
                 Section("Tax") {
                     TextField("Tax Amount", text: $gstAmount)
                         .keyboardType(.decimalPad)
@@ -136,7 +167,7 @@ struct ReviewView: View {
                         .disabled(isLocked)
                 }
             } else {
-                ProgressView("Loading...")
+                ProgressView("Loading")
             }
         }
         .toolbar {
@@ -153,6 +184,7 @@ struct ReviewView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: billId) { await loadBill() }
         .task(id: billId) { await loadDisplayImage() }
+        .task { usedPaymentMethods = (try? db.fetchPaymentMethods()) ?? [] }
         .task {
             // Unlock the form for manual entry if extraction never finishes
             try? await Task.sleep(for: .seconds(30))
@@ -227,6 +259,7 @@ struct ReviewView: View {
         gstin = bill.gstin ?? ""
         billNo = bill.billNo ?? ""
         category = bill.category ?? "Miscellaneous"
+        paymentMethod = bill.paymentMethod ?? ""
     }
 
     /// The decimal pad inserts the locale's separator (e.g. "," in many
@@ -257,10 +290,15 @@ struct ReviewView: View {
         updated.gstin = gstin.isEmpty ? nil : gstin
         updated.billNo = billNo.isEmpty ? nil : billNo
         updated.category = category
+        let trimmedPaymentMethod = paymentMethod.trimmingCharacters(in: .whitespaces)
+        updated.paymentMethod = trimmedPaymentMethod.isEmpty ? nil : trimmedPaymentMethod
         updated.status = .saved
 
         do {
             try db.update(updated)
+            if !trimmedPaymentMethod.isEmpty {
+                try? db.rememberPaymentMethod(trimmedPaymentMethod)
+            }
             Task { await sync.syncPending() }
             dismiss()
         } catch {

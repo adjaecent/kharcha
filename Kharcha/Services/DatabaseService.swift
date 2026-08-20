@@ -76,6 +76,27 @@ final class DatabaseService: ObservableObject {
                 """)
         }
 
+        migrator.registerMigration("v5") { db in
+            try db.alter(table: "bills") { t in
+                t.add(column: "paymentMethod", .text)
+            }
+        }
+
+        // Payment methods live in their own table so a hand-typed one survives
+        // deleting the bill it was first used on.
+        migrator.registerMigration("v6") { db in
+            try db.create(table: "paymentMethods") { t in
+                t.column("name", .text).primaryKey()
+                t.column("lastUsedAt", .datetime).notNull()
+            }
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO paymentMethods (name, lastUsedAt)
+                SELECT paymentMethod, MAX(createdAt) FROM bills
+                WHERE paymentMethod IS NOT NULL AND paymentMethod <> ''
+                GROUP BY paymentMethod
+                """)
+        }
+
         try migrator.migrate(dbQueue)
     }
 
@@ -112,6 +133,25 @@ final class DatabaseService: ObservableObject {
     func delete(id: String) throws {
         try dbQueue.write { db in
             _ = try Bill.deleteOne(db, key: id)
+        }
+    }
+
+    /// Payment methods already used, most recent first. The picker is built
+    /// from these so a hand-typed method becomes a one-tap choice next time.
+    func fetchPaymentMethods() throws -> [String] {
+        try dbQueue.read { db in
+            try String.fetchAll(db, sql: "SELECT name FROM paymentMethods ORDER BY lastUsedAt DESC")
+        }
+    }
+
+    /// Records a payment method for future suggestions. Kept independent of
+    /// `bills` so deleting a bill never removes a method from the picker.
+    func rememberPaymentMethod(_ name: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO paymentMethods (name, lastUsedAt) VALUES (?, ?)
+                ON CONFLICT(name) DO UPDATE SET lastUsedAt = excluded.lastUsedAt
+                """, arguments: [name, Date()])
         }
     }
 
