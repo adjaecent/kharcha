@@ -30,7 +30,7 @@ enum BillProcessor {
                 bill.vendor = fields.vendor
                 bill.date = fields.date
                 bill.amount = fields.amount
-                bill.currency = fields.currency ?? "INR"
+                bill.currency = fields.currency ?? Currency.inr.code
                 bill.gstAmount = fields.gstAmount
                 bill.gstin = fields.gstin
                 bill.billNo = fields.billNo
